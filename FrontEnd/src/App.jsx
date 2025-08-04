@@ -11,7 +11,7 @@ import { Container } from "./components/Container"
 
 //start both nodemon server.js and yarn run dev on diff terminals to start this
 
-const server = "http://localhost:5000";
+const server = "https://render.com/docs/web-services#port-binding";
 const connectionOptions = {
   "force new connection": true,
   reconnectionAttempts: "Infinity",
