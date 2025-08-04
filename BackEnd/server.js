@@ -104,24 +104,14 @@ io.on("connection", (socket) => {
 
 });
 
-
-
-
-
-
-
-
-
-
 //Routes
 app.get('/', (req, res) => {
     res.send("this is the server for my whiteboard app")
 
 })
 
-const port = process.env.port || 5000
-const host = "localhost"
+const port = process.env.PORT || 5000
 
-server.listen(port, host, () => {
-    console.log("server is listening")
+server.listen(port, () => {
+    console.log(`Server is listening on port ${port}`)
 })
