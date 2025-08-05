@@ -1,17 +1,29 @@
-const express = require("express")
-const app = express()
-const { addUser, getUser, removeUser } = require("./utils/user")
+const express = require("express");
+const cors = require("cors");
+const http = require("http");
+const { Server } = require("socket.io");
+const { addUser, getUser, removeUser } = require("./utils/user");
 
-const http = require("http")
-const { Server } = require("socket.io")
+const app = express();
+const server = http.createServer(app);
 
-//creating http server for our app
-const server = http.createServer(app)
+// ✅ Enable CORS for cross-origin access (important for Render + Vercel setup)
+app.use(cors({
+    origin: "https://colaborate-whiteboard-webapp-v1kp.vercel.app",
+    methods: ["GET", "POST"]
+}));
 
-//creating server instance for socket
-const io = new Server(server)
+// ✅ Setup Socket.IO with CORS config
+const io = new Server(server, {
+    cors: {
+        origin: "https://colaborate-whiteboard-webapp-v1kp.vercel.app", // <-- replace with Vercel frontend URL
+        methods: ["GET", "POST"]
+    }
+});
+
 
 let roomIdGlobal;
+
 io.on("connection", (socket) => {
     socket.on("update-draw-permission", ({ roomId, targetUserId, canDraw }) => {
         const targetUser = getUsersInRoom(roomId).find(user => user.userId === targetUserId);
@@ -21,7 +33,6 @@ io.on("connection", (socket) => {
             io.to(roomId).emit("allUsers", updatedUsers); // Broadcast updated user list
         }
     });
-
 
     socket.on('user-joined', (userData) => {
         const { name, id, userId, host } = userData;
@@ -52,17 +63,14 @@ io.on("connection", (socket) => {
         socket.broadcast.to(id).emit("userJoinedMessageBroadcasted", name);
     });
 
-
-
     socket.on('message', (data) => {
-        const { message } = data
-        const user = getUser(socket.id)
+        const { message } = data;
+        const user = getUser(socket.id);
         if (user) {
-            socket.broadcast.to(roomIdGlobal).emit("messageResponse", { message, name: user.name })
+            socket.broadcast.to(roomIdGlobal).emit("messageResponse", { message, name: user.name });
         }
-    })
+    });
 
-    // ✅ Move this here (inside)
     socket.on("draw-element", (data) => {
         const user = getUser(socket.id);
         if (user && user.presenter) {
@@ -78,14 +86,14 @@ io.on("connection", (socket) => {
         io.to(roomIdGlobal).emit("allUsers", updatedUsers);
     });
 
-
     socket.on("disconnect", () => {
         const user = getUser(socket.id);
         if (user) {
-            const users = removeUser(socket.id)
+            const users = removeUser(socket.id);
         }
-        socket.broadcast.to(roomIdGlobal).emit("userLeftMessageBroadcasted", user)
-    })
+        socket.broadcast.to(roomIdGlobal).emit("userLeftMessageBroadcasted", user);
+    });
+
     socket.on("userTyping", (id) => {
         const user = getUser(id);
         if (user) {
@@ -99,19 +107,15 @@ io.on("connection", (socket) => {
             socket.to(user.id).emit("userStoppedTyping");
         }
     });
-
-
-
 });
 
-//Routes
+// ✅ Simple route to check server is running
 app.get('/', (req, res) => {
-    res.send("this is the server for my whiteboard app")
+    res.send("This is the server for my whiteboard app");
+});
 
-})
-
-const port = process.env.PORT || 5000
-
+// ✅ Use dynamic port for Render deployment
+const port = process.env.PORT || 5050;
 server.listen(port, () => {
-    console.log(`Server is listening on port ${port}`)
-})
+    console.log(`Server is listening on port ${port}`);
+});
