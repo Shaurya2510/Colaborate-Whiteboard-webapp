@@ -51,7 +51,7 @@ const Whiteboard = ({
         ctxRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
 
         elements.forEach((element) => {
-            drawElement(element, roughCanvas)
+            drawElement(element, roughCanvas, ctxRef.current)
         })
     }, [elements])
 
@@ -68,7 +68,6 @@ const Whiteboard = ({
 
     // Drawing handlers
     function handleMouseDown(e) {
-
         if (!user?.presenter) {
             socket.emit('permission-denied');
             toast({
@@ -81,55 +80,20 @@ const Whiteboard = ({
 
         const { offsetX, offsetY } = e.nativeEvent;
 
-        if (tool === 'pencil' || tool === 'eraser') {
-            const newElement = {
-                type: 'pencil',
-                offsetX,
-                offsetY,
-                path: [[offsetX, offsetY]],
-                color: tool === 'eraser' ? '#ffffff' : color // ← eraser logic here
-            };
-            setElements(prev => [...prev, newElement]);
-            socket.emit('draw-element', newElement);
-        } else if (tool === 'line') {
-            const newElement = {
-                type: 'line',
-                offsetX,
-                offsetY,
-                height: offsetY,
-                width: offsetX,
-                color
-            };
-            setElements(prev => [...prev, newElement]);
-            socket.emit('draw-element', newElement);
-        } else if (tool === 'rect') {
-            const newElement = {
-                type: 'rect',
-                offsetX,
-                offsetY,
-                height: 0,
-                width: 0,
-                color
-            };
-            setElements(prev => [...prev, newElement]);
-            socket.emit('draw-element', newElement);
-        }
-        else if (tool === 'eraser') {
-            const newElement = {
-                type: 'eraser',
-                offsetX,
-                offsetY,
-                path: [[offsetX, offsetY]],
-                color: "#ffffff" // assuming white background
-            };
-            setElements((prev) => [...prev, newElement]);
-            socket.emit('draw-element', newElement);
-        }
+        const newElement = {
+            type: tool === 'line' ? 'line' : tool === 'rect' ? 'rect' : tool === 'eraser' ? 'eraser' : 'pencil',
+            offsetX,
+            offsetY,
+            height: offsetY,
+            width: offsetX,
+            path: tool === 'pencil' || tool === 'eraser' ? [[offsetX, offsetY]] : undefined,
+            color: tool === 'eraser' ? '#ffffff' : color
+        };
 
 
+        setElements(prev => [...prev, newElement]);
+        socket.emit('draw-element', newElement);
         setIsDrawing(true);
-
-
     }
 
     function handleMouseMove(e) {

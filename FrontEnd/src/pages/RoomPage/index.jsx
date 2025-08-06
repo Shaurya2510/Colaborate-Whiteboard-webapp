@@ -11,9 +11,14 @@ import Button from '../../components/ui/button'
 import Input from '../../components/ui/input'
 import ToggleGroup from '../../components/ui/toggle-group'
 import Tooltip from '../../components/ui/tooltip'
+import { useLocation, useNavigate } from 'react-router-dom';
 
 
 const RoomPage = ({ user, socket, users }) => {
+
+
+    const [userList, setUserList] = useState(users || [])
+
     const [tool, setTool] = useState('pencil')
     const [color, setColor] = useState('#000000')
     const [elements, setElements] = useState([])
@@ -26,6 +31,15 @@ const RoomPage = ({ user, socket, users }) => {
 
     const canvasRef = useRef(null)
     const ctxRef = useRef(null)
+    const location = useLocation();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!user) {
+            // Redirect back if no user was passed (invalid access)
+            navigate('/');
+        }
+    }, [user, navigate]);
 
     useEffect(() => {
         socket.on('permission-denied', () => {
@@ -36,6 +50,15 @@ const RoomPage = ({ user, socket, users }) => {
             })
         })
     }, [socket])
+
+    useEffect(() => {
+        socket.on('users-updated', (updatedUserList) => {
+            setUserList(updatedUserList)
+        })
+
+        return () => socket.off('users-updated')
+    }, [socket])
+
 
     const handleClear = () => {
         if (!user?.presenter) {
@@ -88,7 +111,7 @@ const RoomPage = ({ user, socket, users }) => {
                 </div>
 
                 <h1 className="text-xl font-semibold">
-                    Welcome to the Whiteboard (Users Online: {users.length})
+                    Welcome to the Whiteboard (Users Online: {userList.length})
                 </h1>
             </header>
 
@@ -96,7 +119,7 @@ const RoomPage = ({ user, socket, users }) => {
             {openedUserBar && (
                 <div className="fixed top-0 left-0 h-full w-64 bg-white text-black shadow-lg z-10 p-4">
                     <Button variant="ghost" className="mb-4" onClick={() => setOpenedUserBar(false)}>✖</Button>
-                    {users.map((usr, index) => (
+                    {userList.map((usr, index) => (
                         <div key={index} className="flex items-center justify-between mb-2">
                             <span>
                                 {usr.name} {user?.userId === usr.userId && "(You)"} {usr.presenter && <span className="text-green-600 ml-1">✏️</span>}
@@ -121,7 +144,7 @@ const RoomPage = ({ user, socket, users }) => {
                 </div>
             )}
 
-            {openedChatBar && <Chat setOpenedChatBar={setOpenedChatBar} socket={socket} users={users} />}
+            {openedChatBar && <Chat setOpenedChatBar={setOpenedChatBar} socket={socket} users={userList} />}
 
 
             <div className="flex flex-wrap gap-4 items-center justify-center bg-gray-800 p-4 shadow w-full">
@@ -131,7 +154,7 @@ const RoomPage = ({ user, socket, users }) => {
                         { label: 'Pencil', value: 'pencil' },
                         { label: 'Line', value: 'line' },
                         { label: 'Rectangle', value: 'rect' },
-                        { label: 'Erase', value: 'erase' },
+                        // { label: 'Erase', value: 'erase' },
                     ]}
                     value={tool}
                     onChange={setTool}
@@ -182,7 +205,7 @@ const RoomPage = ({ user, socket, users }) => {
                 setIsOpen={setIsPresenterModalOpen}
                 user={user}
                 socket={socket}
-                users={users}
+                users={userList}
             />
 
 

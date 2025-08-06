@@ -25,5 +25,14 @@ export const createElement = (tool, offsetX, offsetY, color) => {
             height: 0,
             color
         }
+    } else if (tool === 'erase') {
+        return {
+            type: 'eraser',
+            offsetX,
+            offsetY,
+            path: [[offsetX, offsetY]],
+            color: '#ffffff' // or skip this
+        }
     }
+
 }
