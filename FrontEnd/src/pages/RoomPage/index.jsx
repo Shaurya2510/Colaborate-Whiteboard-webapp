@@ -13,8 +13,14 @@ import ToggleGroup from '../../components/ui/toggle-group'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 const RoomPage = ({ user, socket, users }) => {
+    // initial user list from props (if any)
     const [userList, setUserList] = useState(users || [])
-    const [currentUser, setCurrentUser] = useState(user) // ✅ Track current user in state
+    // currentUser tracked in state so UI re-renders on permission changes
+    const [currentUser, setCurrentUser] = useState(user || null)
+
+    // keep a ref to currentUser to avoid stale closures inside socket callbacks
+    const currentUserRef = useRef(currentUser)
+    useEffect(() => { currentUserRef.current = currentUser }, [currentUser])
 
     const [tool, setTool] = useState('pencil')
     const [color, setColor] = useState('#000000')
@@ -31,45 +37,64 @@ const RoomPage = ({ user, socket, users }) => {
     const location = useLocation()
     const navigate = useNavigate()
 
-    // Redirect if user not found
+    // If the parent didn't provide a user prop, redirect back to home
     useEffect(() => {
-        if (!currentUser) {
+        if (!user) {
             navigate('/')
         }
-    }, [currentUser, navigate])
+    }, [user, navigate])
 
-    // Permission denied toast
+    // Single effect to register all socket listeners (safe to re-run if socket changes)
     useEffect(() => {
-        socket.on('permission-denied', () => {
+        if (!socket) return
+
+        const onPermissionDenied = () => {
             toast({
                 title: 'Permission Denied',
                 description: "You don't have drawing permissions.",
                 variant: 'destructive'
             })
-        })
-    }, [socket, toast])
+        }
 
-    // Update user list and sync current user
-    useEffect(() => {
-        socket.on('users-updated', (updatedUserList) => {
+        const onUsersUpdated = (updatedUserList) => {
+            // update master user list
             setUserList(updatedUserList)
 
-            // Keep current user in sync
-            const me = updatedUserList.find(u => u.userId === currentUser?.userId)
-            if (me) setCurrentUser(me)
-        })
+            // keep currentUser in sync if present in updated list
+            setCurrentUser(prev => {
+                const myId = prev?.userId || user?.userId
+                if (!myId) return prev
+                const me = updatedUserList.find(u => u.userId === myId)
+                return me || prev
+            })
+        }
 
-        return () => socket.off('users-updated')
-    }, [socket, currentUser?.userId])
+        // server emits 'allUsers' when someone joins (based on your server code),
+        // and emits 'users-updated' when permissions change — handle both
+        socket.on('permission-denied', onPermissionDenied)
+        socket.on('users-updated', onUsersUpdated)
+        socket.on('allUsers', onUsersUpdated)
 
-    // Update current user presenter status when permission changes
-    useEffect(() => {
-        socket.on("draw-permission-updated", (canDraw) => {
+        // handle direct permission update (fast path for a single user)
+        socket.on('draw-permission-updated', (canDraw) => {
+            // update current user state so UI toggles immediately
             setCurrentUser(prev => prev ? { ...prev, presenter: canDraw } : prev)
+
+            // also update userList entry for this user (in case server didn't emit users-updated)
+            setUserList(prevList => {
+                const myId = currentUserRef.current?.userId || user?.userId
+                if (!myId) return prevList
+                return prevList.map(u => (u.userId === myId ? { ...u, presenter: canDraw } : u))
+            })
         })
 
-        return () => socket.off("draw-permission-updated")
-    }, [socket])
+        return () => {
+            socket.off('permission-denied', onPermissionDenied)
+            socket.off('users-updated', onUsersUpdated)
+            socket.off('allUsers', onUsersUpdated)
+            socket.off('draw-permission-updated')
+        }
+    }, [socket, toast, user])
 
     const handleClear = () => {
         if (!currentUser?.presenter) {
@@ -77,6 +102,7 @@ const RoomPage = ({ user, socket, users }) => {
             return
         }
         const canvas = canvasRef.current
+        if (!canvas) return
         const context = canvas.getContext('2d')
         context.clearRect(0, 0, canvas.width, canvas.height)
         setElements([])
@@ -103,6 +129,12 @@ const RoomPage = ({ user, socket, users }) => {
         setHistory(prev => prev.slice(0, -1))
     }
 
+    // Helper render guard while we wait for initial user info (optional)
+    // We don't redirect here because parent did that already if user prop was missing.
+    if (!currentUser && !user) {
+        return <div className="p-8 text-center">Loading...</div>
+    }
+
     return (
         <div className="bg-gray-900 text-white w-full h-full min-h-screen flex flex-col items-center">
             <header className="flex justify-between items-center w-full p-4 bg-gray-800 shadow">
@@ -127,16 +159,20 @@ const RoomPage = ({ user, socket, users }) => {
             {openedUserBar && (
                 <div className="fixed top-0 left-0 h-full w-64 bg-white text-black shadow-lg z-10 p-4">
                     <Button variant="ghost" className="mb-4" onClick={() => setOpenedUserBar(false)}>✖</Button>
+                    {userList.length === 0 && <div>No users found</div>}
                     {userList.map((usr, index) => (
                         <div key={index} className="flex items-center justify-between mb-2">
                             <span>
                                 {usr.name} {currentUser?.userId === usr.userId && "(You)"} {usr.presenter && <span className="text-green-600 ml-1">✏️</span>}
                             </span>
+
+                            {/* Only hosts see the allow/revoke button and not for themselves */}
                             {currentUser?.host && currentUser?.userId !== usr.userId && (
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => {
+                                        // emit update request to server
                                         socket.emit("update-draw-permission", {
                                             roomId: currentUser.id,
                                             targetUserId: usr.userId,
