@@ -1,3 +1,4 @@
+// RoomPage.jsx
 import { useState, useRef, useEffect } from 'react'
 import Whiteboard from '../../components/Whiteboard'
 import Chat from '../../components/ChatBar'
@@ -6,25 +7,22 @@ import { useToast } from '../../components/ui/use-toast'
 import { downloadCanvasAsImage } from '../../utils/exportImage'
 import PresenterModal from '../../components/PresenterModal'
 
-// ShadCN UI Components
 import Button from '../../components/ui/button'
 import Input from '../../components/ui/input'
 import ToggleGroup from '../../components/ui/toggle-group'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 const RoomPage = ({ user, socket, users }) => {
-    // initial user list from props (if any)
     const [userList, setUserList] = useState(users || [])
-    // currentUser tracked in state so UI re-renders on permission changes
     const [currentUser, setCurrentUser] = useState(user || null)
 
-    // keep a ref to currentUser to avoid stale closures inside socket callbacks
+    // avoid stale closures
     const currentUserRef = useRef(currentUser)
     useEffect(() => { currentUserRef.current = currentUser }, [currentUser])
 
     const [tool, setTool] = useState('pencil')
     const [color, setColor] = useState('#000000')
-    const [elements, setElements] = useState([])
+    const [elements, setElementsState] = useState([]) // local render state
     const [history, setHistory] = useState([])
     const [openedUserBar, setOpenedUserBar] = useState(false)
     const [openedChatBar, setOpenedChatBar] = useState(false)
@@ -34,17 +32,29 @@ const RoomPage = ({ user, socket, users }) => {
 
     const canvasRef = useRef(null)
     const ctxRef = useRef(null)
+    const isLocalUpdate = useRef(false) // mark local updates to avoid echo loops
+
     const location = useLocation()
     const navigate = useNavigate()
 
-    // If the parent didn't provide a user prop, redirect back to home
+    // redirect if parent didn't pass user
     useEffect(() => {
-        if (!user) {
-            navigate('/')
-        }
+        if (!user) navigate('/')
     }, [user, navigate])
 
-    // Single effect to register all socket listeners (safe to re-run if socket changes)
+    // convenience wrapper to update local state and mark as local (so we don't re-emit)
+    const setElements = (newElements, { emit = false } = {}) => {
+        isLocalUpdate.current = true
+        setElementsState(newElements)
+        // schedule clearing flag on next tick
+        setTimeout(() => { isLocalUpdate.current = false }, 0)
+
+        if (emit && currentUser) {
+            socket.emit('whiteboard-update', { roomId: currentUser.id, elements: newElements })
+        }
+    }
+
+    // Register socket listeners
     useEffect(() => {
         if (!socket) return
 
@@ -57,10 +67,7 @@ const RoomPage = ({ user, socket, users }) => {
         }
 
         const onUsersUpdated = (updatedUserList) => {
-            // update master user list
             setUserList(updatedUserList)
-
-            // keep currentUser in sync if present in updated list
             setCurrentUser(prev => {
                 const myId = prev?.userId || user?.userId
                 if (!myId) return prev
@@ -69,18 +76,34 @@ const RoomPage = ({ user, socket, users }) => {
             })
         }
 
-        // server emits 'allUsers' when someone joins (based on your server code),
-        // and emits 'users-updated' when permissions change — handle both
+        const onWhiteboardUpdate = (updatedElements) => {
+            // avoid echoing back if this client just emitted the same update
+            if (isLocalUpdate.current) return
+            setElementsState(updatedElements || [])
+        }
+
+        const onWhiteboardClear = () => {
+            if (isLocalUpdate.current) return
+            setElementsState([])
+            setHistory([])
+            const canvas = canvasRef.current
+            if (canvas) {
+                const ctx = canvas.getContext('2d')
+                ctx.clearRect(0, 0, canvas.width, canvas.height)
+            }
+        }
+
+        // incremental stroke (other users' single element)
+        const onReceiveElement = (element) => {
+            if (isLocalUpdate.current) return
+            setElementsState(prev => [...prev, element])
+        }
+
         socket.on('permission-denied', onPermissionDenied)
         socket.on('users-updated', onUsersUpdated)
         socket.on('allUsers', onUsersUpdated)
-
-        // handle direct permission update (fast path for a single user)
         socket.on('draw-permission-updated', (canDraw) => {
-            // update current user state so UI toggles immediately
             setCurrentUser(prev => prev ? { ...prev, presenter: canDraw } : prev)
-
-            // also update userList entry for this user (in case server didn't emit users-updated)
             setUserList(prevList => {
                 const myId = currentUserRef.current?.userId || user?.userId
                 if (!myId) return prevList
@@ -88,49 +111,60 @@ const RoomPage = ({ user, socket, users }) => {
             })
         })
 
+        socket.on('whiteboard-update', onWhiteboardUpdate)
+        socket.on('whiteboard-clear', onWhiteboardClear)
+        socket.on('receive-element', onReceiveElement)
+
         return () => {
             socket.off('permission-denied', onPermissionDenied)
             socket.off('users-updated', onUsersUpdated)
             socket.off('allUsers', onUsersUpdated)
             socket.off('draw-permission-updated')
+            socket.off('whiteboard-update', onWhiteboardUpdate)
+            socket.off('whiteboard-clear', onWhiteboardClear)
+            socket.off('receive-element', onReceiveElement)
         }
     }, [socket, toast, user])
 
+    // helpers that emit actions for room (no persistence)
     const handleClear = () => {
-        if (!currentUser?.presenter) {
-            socket.emit('permission-denied')
-            return
-        }
-        const canvas = canvasRef.current
-        if (!canvas) return
-        const context = canvas.getContext('2d')
-        context.clearRect(0, 0, canvas.width, canvas.height)
-        setElements([])
+        if (!currentUser?.presenter) { socket.emit('permission-denied'); return }
+        setElements([], { emit: true })
+        setHistory([])
+        socket.emit('whiteboard-clear', { roomId: currentUser.id })
     }
 
     const handleUndo = () => {
-        if (!currentUser?.presenter) {
-            socket.emit('permission-denied')
-            return
-        }
+        if (!currentUser?.presenter) { socket.emit('permission-denied'); return }
         if (elements.length === 0) return
-        setHistory(prev => [...prev, elements[elements.length - 1]])
-        setElements(prev => prev.slice(0, -1))
+        const last = elements[elements.length - 1]
+        const updated = elements.slice(0, -1)
+        setHistory(prev => [...prev, last])
+        setElements(updated, { emit: true })
+        socket.emit('whiteboard-undo', { roomId: currentUser.id, elements: updated })
     }
 
     const handleRedo = () => {
-        if (!currentUser?.presenter) {
-            socket.emit('permission-denied')
-            return
-        }
+        if (!currentUser?.presenter) { socket.emit('permission-denied'); return }
         if (history.length === 0) return
         const last = history[history.length - 1]
-        setElements(prev => [...prev, last])
+        const updated = [...elements, last]
         setHistory(prev => prev.slice(0, -1))
+        setElements(updated, { emit: true })
+        socket.emit('whiteboard-redo', { roomId: currentUser.id, elements: updated })
     }
 
-    // Helper render guard while we wait for initial user info (optional)
-    // We don't redirect here because parent did that already if user prop was missing.
+    // incremental draw emit (called by Whiteboard when a single element is created)
+    const emitDrawElement = (element) => {
+        if (!currentUser) return
+        // mark local update so when receive-element comes back we don't duplicate
+        isLocalUpdate.current = true
+        socket.emit('draw-element', { roomId: currentUser.id, element })
+        // clear flag after tick
+        setTimeout(() => { isLocalUpdate.current = false }, 0)
+    }
+
+    // guard render while user info loads
     if (!currentUser && !user) {
         return <div className="p-8 text-center">Loading...</div>
     }
@@ -141,13 +175,6 @@ const RoomPage = ({ user, socket, users }) => {
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setOpenedUserBar(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded shadow">Users</Button>
                     <Button variant="outline" onClick={() => setOpenedChatBar(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded shadow">Chat</Button>
-                    <Button variant="outline" onClick={() => setIsPresenterModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded shadow">Presenter Access</Button>
-
-                    {currentUser?.host && (
-                        <Button variant="default" onClick={() => setIsPresenterModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded shadow">
-                            Manage Permissions
-                        </Button>
-                    )}
                 </div>
 
                 <h1 className="text-xl font-semibold">
@@ -163,16 +190,15 @@ const RoomPage = ({ user, socket, users }) => {
                     {userList.map((usr, index) => (
                         <div key={index} className="flex items-center justify-between mb-2">
                             <span>
-                                {usr.name} {currentUser?.userId === usr.userId && "(You)"} {usr.presenter && <span className="text-green-600 ml-1">✏️</span>}
+                                {usr.name} {currentUser?.userId === usr.userId && "(You)"} {usr.presenter && <span className="text-green-600 ml-1">✏️</span>} {usr.host && <span className="font-bold ml-2">Host</span>}
                             </span>
 
-                            {/* Only hosts see the allow/revoke button and not for themselves */}
-                            {currentUser?.host && currentUser?.userId !== usr.userId && (
+                            {/* Only host (currentUser) sees Allow/Revoke for other non-host users */}
+                            {currentUser?.host && !usr.host && currentUser?.userId !== usr.userId && (
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     onClick={() => {
-                                        // emit update request to server
                                         socket.emit("update-draw-permission", {
                                             roomId: currentUser.id,
                                             targetUserId: usr.userId,
@@ -237,15 +263,15 @@ const RoomPage = ({ user, socket, users }) => {
                 canvasRef={canvasRef}
                 ctxRef={ctxRef}
                 elements={elements}
-                setElements={setElements}
+                setElements={(newElements, opts) => setElements(newElements, opts)} // wrapper that may emit
                 tool={tool}
                 color={color}
                 setColor={setColor}
                 socket={socket}
                 user={currentUser}
+                emitDrawElement={emitDrawElement} // optional helper you can use inside Whiteboard when a single element is created
             />
 
-            {/* Presenter Permissions Modal */}
             <PresenterModal
                 isOpen={isPresenterModalOpen}
                 setIsOpen={setIsPresenterModalOpen}
