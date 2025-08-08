@@ -26,15 +26,17 @@ const activeRooms = new Set();
 io.on("connection", (socket) => {
     // ✅ Draw permission updates
     socket.on("update-draw-permission", ({ roomId, targetUserId, canDraw }) => {
-        const targetUser = getUsersInRoom(roomId).find(user => user.userId === targetUserId);
+        updateUserPermission(roomId, targetUserId, canDraw); // <- new function in utils/user.js
+
+        const updatedUsers = getUsersInRoom(roomId);
+        io.to(roomId).emit("users-updated", updatedUsers);
+
+        const targetUser = updatedUsers.find(u => u.userId === targetUserId);
         if (targetUser) {
-            targetUser.presenter = canDraw;
-            const updatedUsers = getUsersInRoom(roomId);
-            io.to(roomId).emit("users-updated", updatedUsers);
-            // ✅ Broadcast updated list
-            io.to(targetUser.socketId).emit("draw-permission-updated", canDraw); // ✅ Notify target user
+            io.to(targetUser.socketId).emit("draw-permission-updated", canDraw);
         }
     });
+
 
     // ✅ Handle room join/create
     socket.on('user-joined', (userData) => {

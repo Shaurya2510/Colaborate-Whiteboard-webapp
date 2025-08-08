@@ -27,14 +27,14 @@ const getUser = (id) => {
 const getUsersInRoom = (roomId) => {
     return users.filter(user => user.id === roomId)
 }
-const updateUserPermission = (roomId, targetUserId, canDraw) => {
-    users.forEach((user) => {
-        if (user.id === roomId && user.userId === targetUserId) {
-            user.presenter = canDraw;
-        }
-    });
-    return getUsersInRoom(roomId);
-};
+function updateUserPermission(roomId, userId, canDraw) {
+    const user = users.find(u => u.id === roomId && u.userId === userId);
+    if (user) {
+        user.presenter = canDraw;
+    }
+}
+
+
 
 module.exports = {
     addUser,
