@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
@@ -26,14 +25,13 @@ const io = new Server(server, {
     }
 });
 
-// Track active rooms (no whiteboard persistence)
+// Track active rooms
 const activeRooms = new Set();
+const whiteboardData = {};
 
 io.on("connection", (socket) => {
-    // Update draw permission (host changes user's presenter flag)
     socket.on("update-draw-permission", ({ roomId, targetUserId, canDraw }) => {
         updateUserPermission(roomId, targetUserId, canDraw);
-
         const updatedUsers = getUsersInRoom(roomId);
         io.to(roomId).emit("users-updated", updatedUsers);
 
@@ -43,24 +41,28 @@ io.on("connection", (socket) => {
         }
     });
 
-    // Handle room join/create
     socket.on('user-joined', (userData) => {
         const { name, id: roomId, userId, host } = userData;
-        const presenter = !!host;
 
-        // Room creation (host only)
+        // Host trying to create a room
         if (host) {
+            // Check if the room already exists
             if (activeRooms.has(roomId)) {
+                // If it does, prevent a new room from being created with the same ID.
+                // The client should handle this case if a host tries to create a room with an existing ID.
                 socket.emit('room-exists');
                 return;
             }
             activeRooms.add(roomId);
-        }
-
-        // Room join validation
-        if (!host && !activeRooms.has(roomId)) {
-            socket.emit('room-not-found');
-            return;
+            // Initialize an empty whiteboard for the new room
+            whiteboardData[roomId] = [];
+        } else {
+            // Non-host trying to join a room
+            if (!activeRooms.has(roomId)) {
+                // If the room doesn't exist, send an explicit message back to the client
+                socket.emit('room-not-found');
+                return;
+            }
         }
 
         socket.join(roomId);
@@ -70,86 +72,77 @@ io.on("connection", (socket) => {
             id: roomId,
             userId,
             host,
-            presenter,
-            socketId: socket.id,
-            canDraw: !!host
+            presenter: !!host, // Only hosts can be presenters by default
+            socketId: socket.id
         };
 
         const users = addUser(user);
 
-        // send full user list to room
+        // Notify all users in the room about the new user list
         io.to(roomId).emit("allUsers", users);
 
-        // confirm to the joining socket
-        socket.emit('user-joined', {
-            name: user.name,
-            id: roomId,
-            userId: user.userId,
-            host: user.host,
-            presenter: user.presenter
-        });
+        // Send join confirmation to the joining user
+        socket.emit('user-joined', user);
 
-        // notify others in room
+        // Notify others in the room that a new user joined
         socket.broadcast.to(roomId).emit("userJoinedMessageBroadcasted", name);
 
-        // NOTE: no persistent whiteboard state is sent — room is fresh
+        // Send current whiteboard state to the joining user
+        const roomBoard = whiteboardData[roomId] || [];
+        socket.emit("whiteboard-update", roomBoard);
     });
 
-    // Messaging
     socket.on('message', (data) => {
-        const { message } = data;
         const user = getUser(socket.id);
         if (user) {
-            socket.broadcast.to(user.id).emit("messageResponse", { message, name: user.name });
+            socket.broadcast.to(user.id).emit("messageResponse", { message: data.message, name: user.name });
         }
     });
 
-    // Real-time incremental stroke broadcast
-    socket.on("draw-element", ({ roomId, element }) => {
+    socket.on("draw-element", (data) => {
         const user = getUser(socket.id);
         if (user && user.presenter) {
-            // broadcast to others in same room
-            socket.to(roomId).emit("receive-element", element);
+            socket.to(user.id).emit("receive-element", data);
         }
     });
 
-    // Full-state update (undo/redo/explicit full update from client)
     socket.on('whiteboard-update', ({ roomId, elements }) => {
-        // no storage — just broadcast to room
+        whiteboardData[roomId] = elements || [];
         socket.to(roomId).emit('whiteboard-update', elements);
     });
 
-    // Clear whiteboard for a room (no storage)
     socket.on('whiteboard-clear', ({ roomId }) => {
+        whiteboardData[roomId] = [];
         socket.to(roomId).emit('whiteboard-clear');
     });
 
-    // Optional explicit undo/redo (treated same as full update)
     socket.on('whiteboard-undo', ({ roomId, elements }) => {
-        socket.to(roomId).emit('whiteboard-update', elements);
+        whiteboardData[roomId] = elements || [];
+        socket.to(roomId).emit('whiteboard-update', whiteboardData[roomId]);
     });
 
     socket.on('whiteboard-redo', ({ roomId, elements }) => {
-        socket.to(roomId).emit('whiteboard-update', elements);
+        whiteboardData[roomId] = elements || [];
+        socket.to(roomId).emit('whiteboard-update', whiteboardData[roomId]);
     });
 
-    // Disconnect cleanup
     socket.on("disconnect", () => {
         const user = getUser(socket.id);
         if (user) {
-            const users = removeUser(socket.id);
-            const roomUsers = users.filter(u => u.id === user.id);
+            removeUser(socket.id);
+            const usersInRoom = getUsersInRoom(user.id);
 
-            // delete empty rooms (and don't persist anything)
-            if (roomUsers.length === 0) {
+            // Delete room and whiteboard data if it becomes empty
+            if (usersInRoom.length === 0) {
                 activeRooms.delete(user.id);
+                delete whiteboardData[user.id];
+            } else {
+                io.to(user.id).emit("allUsers", usersInRoom);
+                socket.broadcast.to(user.id).emit("userLeftMessageBroadcasted", user);
             }
-
-            socket.broadcast.to(user.id).emit("userLeftMessageBroadcasted", user);
         }
     });
 
-    // Typing indicators
     socket.on("userTyping", (id) => {
         const user = getUser(id);
         if (user) {
@@ -163,7 +156,6 @@ io.on("connection", (socket) => {
             socket.to(user.id).emit("userStoppedTyping");
         }
     });
-
 });
 
 app.get('/', (req, res) => {

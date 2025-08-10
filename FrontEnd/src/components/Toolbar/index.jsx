@@ -5,13 +5,13 @@ const Toolbar = ({ tool, setTool, color, setColor, handleUndo, handleRedo, handl
     return (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-white shadow-xl p-3 rounded-2xl flex items-center gap-4 z-50">
             {/* Tool Selectors */}
-            <button onClick={() => setTool("pencil")} className={tool === "pencil" ? "text-purple-700" : ""}>
+            <button onClick={() => setTool("pencil")} className={tool === "pencil" ? "text-blue-700" : ""}>
                 <Pencil size={20} />
             </button>
-            <button onClick={() => setTool("line")} className={tool === "line" ? "text-purple-700" : ""}>
+            <button onClick={() => setTool("line")} className={tool === "line" ? "text-blue-700" : ""}>
                 <Minus size={20} />
             </button>
-            <button onClick={() => setTool("rect")} className={tool === "rect" ? "text-purple-700" : ""}>
+            <button onClick={() => setTool("rect")} className={tool === "rect" ? "text-blue-700" : ""}>
                 <Square size={20} />
             </button>
 

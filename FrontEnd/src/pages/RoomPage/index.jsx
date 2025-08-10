@@ -1,4 +1,3 @@
-// RoomPage.jsx
 import { useState, useRef, useEffect } from 'react'
 import Whiteboard from '../../components/Whiteboard'
 import Chat from '../../components/ChatBar'
@@ -7,22 +6,25 @@ import { useToast } from '../../components/ui/use-toast'
 import { downloadCanvasAsImage } from '../../utils/exportImage'
 import PresenterModal from '../../components/PresenterModal'
 
+// ShadCN UI Components
 import Button from '../../components/ui/button'
 import Input from '../../components/ui/input'
 import ToggleGroup from '../../components/ui/toggle-group'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 const RoomPage = ({ user, socket, users }) => {
+    // initial user list from props (if any)
     const [userList, setUserList] = useState(users || [])
+    // currentUser tracked in state so UI re-renders on permission changes
     const [currentUser, setCurrentUser] = useState(user || null)
 
-    // avoid stale closures
+    // keep a ref to currentUser to avoid stale closures inside socket callbacks
     const currentUserRef = useRef(currentUser)
     useEffect(() => { currentUserRef.current = currentUser }, [currentUser])
 
     const [tool, setTool] = useState('pencil')
     const [color, setColor] = useState('#000000')
-    const [elements, setElementsState] = useState([]) // local render state
+    const [elements, setElements] = useState([])
     const [history, setHistory] = useState([])
     const [openedUserBar, setOpenedUserBar] = useState(false)
     const [openedChatBar, setOpenedChatBar] = useState(false)
@@ -32,27 +34,15 @@ const RoomPage = ({ user, socket, users }) => {
 
     const canvasRef = useRef(null)
     const ctxRef = useRef(null)
-    const isLocalUpdate = useRef(false) // mark local updates to avoid echo loops
-
     const location = useLocation()
     const navigate = useNavigate()
 
-    // redirect if parent didn't pass user
+    // Redirect if parent didn't supply user
     useEffect(() => {
-        if (!user) navigate('/')
-    }, [user, navigate])
-
-    // convenience wrapper to update local state and mark as local (so we don't re-emit)
-    const setElements = (newElements, { emit = false } = {}) => {
-        isLocalUpdate.current = true
-        setElementsState(newElements)
-        // schedule clearing flag on next tick
-        setTimeout(() => { isLocalUpdate.current = false }, 0)
-
-        if (emit && currentUser) {
-            socket.emit('whiteboard-update', { roomId: currentUser.id, elements: newElements })
+        if (!user) {
+            navigate('/')
         }
-    }
+    }, [user, navigate])
 
     // Register socket listeners
     useEffect(() => {
@@ -68,6 +58,8 @@ const RoomPage = ({ user, socket, users }) => {
 
         const onUsersUpdated = (updatedUserList) => {
             setUserList(updatedUserList)
+
+            // keep currentUser in sync
             setCurrentUser(prev => {
                 const myId = prev?.userId || user?.userId
                 if (!myId) return prev
@@ -76,27 +68,22 @@ const RoomPage = ({ user, socket, users }) => {
             })
         }
 
+        // whiteboard update from server (full elements array)
         const onWhiteboardUpdate = (updatedElements) => {
-            // avoid echoing back if this client just emitted the same update
-            if (isLocalUpdate.current) return
-            setElementsState(updatedElements || [])
+            setElements(updatedElements || [])
+            // optionally reset history? we keep local history as-is
         }
 
+        // whiteboard clear
         const onWhiteboardClear = () => {
-            if (isLocalUpdate.current) return
-            setElementsState([])
+            setElements([])
             setHistory([])
+            // Also clear canvas client-side if Whiteboard component relies on it
             const canvas = canvasRef.current
             if (canvas) {
                 const ctx = canvas.getContext('2d')
                 ctx.clearRect(0, 0, canvas.width, canvas.height)
             }
-        }
-
-        // incremental stroke (other users' single element)
-        const onReceiveElement = (element) => {
-            if (isLocalUpdate.current) return
-            setElementsState(prev => [...prev, element])
         }
 
         socket.on('permission-denied', onPermissionDenied)
@@ -113,7 +100,18 @@ const RoomPage = ({ user, socket, users }) => {
 
         socket.on('whiteboard-update', onWhiteboardUpdate)
         socket.on('whiteboard-clear', onWhiteboardClear)
-        socket.on('receive-element', onReceiveElement)
+
+        // incremental drawing events (optional) - other users' strokes
+        socket.on('receive-element', (data) => {
+            // If you want to apply incremental strokes: append to elements
+            // Some projects keep drawing incremental and also send full state intermittently.
+            // We'll append here if data is a single element
+            if (!data) return
+            setElements(prev => {
+                // avoid duplicates if server also sends full update; this is optional
+                return [...prev, data]
+            })
+        })
 
         return () => {
             socket.off('permission-denied', onPermissionDenied)
@@ -122,49 +120,62 @@ const RoomPage = ({ user, socket, users }) => {
             socket.off('draw-permission-updated')
             socket.off('whiteboard-update', onWhiteboardUpdate)
             socket.off('whiteboard-clear', onWhiteboardClear)
-            socket.off('receive-element', onReceiveElement)
+            socket.off('receive-element')
         }
     }, [socket, toast, user])
 
-    // helpers that emit actions for room (no persistence)
+    // Emit helper: send full elements to server (keeps server's room state)
+    const emitFullUpdate = (updatedElements) => {
+        if (!currentUser) return
+        socket.emit('whiteboard-update', { roomId: currentUser.id, elements: updatedElements })
+    }
+
+    // Clear handler
     const handleClear = () => {
-        if (!currentUser?.presenter) { socket.emit('permission-denied'); return }
-        setElements([], { emit: true })
+        if (!currentUser?.presenter) {
+            socket.emit('permission-denied')
+            return
+        }
+        const newElements = []
+        setElements(newElements)
         setHistory([])
         socket.emit('whiteboard-clear', { roomId: currentUser.id })
     }
 
+    // Undo handler
     const handleUndo = () => {
-        if (!currentUser?.presenter) { socket.emit('permission-denied'); return }
+        if (!currentUser?.presenter) {
+            socket.emit('permission-denied')
+            return
+        }
         if (elements.length === 0) return
         const last = elements[elements.length - 1]
         const updated = elements.slice(0, -1)
         setHistory(prev => [...prev, last])
-        setElements(updated, { emit: true })
+        setElements(updated)
+        // notify server
         socket.emit('whiteboard-undo', { roomId: currentUser.id, elements: updated })
     }
 
+    // Redo handler
     const handleRedo = () => {
-        if (!currentUser?.presenter) { socket.emit('permission-denied'); return }
+        if (!currentUser?.presenter) {
+            socket.emit('permission-denied')
+            return
+        }
         if (history.length === 0) return
         const last = history[history.length - 1]
         const updated = [...elements, last]
         setHistory(prev => prev.slice(0, -1))
-        setElements(updated, { emit: true })
+        setElements(updated)
         socket.emit('whiteboard-redo', { roomId: currentUser.id, elements: updated })
     }
 
-    // incremental draw emit (called by Whiteboard when a single element is created)
-    const emitDrawElement = (element) => {
-        if (!currentUser) return
-        // mark local update so when receive-element comes back we don't duplicate
-        isLocalUpdate.current = true
-        socket.emit('draw-element', { roomId: currentUser.id, element })
-        // clear flag after tick
-        setTimeout(() => { isLocalUpdate.current = false }, 0)
-    }
+    // Optional: when Whiteboard draws a new stroke, it should call setElements and also emitFullUpdate
+    // Example inside Whiteboard you might call:
+    // setElements(prev => { const updated = [...prev, newElement]; socket.emit('whiteboard-update', { roomId: currentUser.id, elements: updated }); return updated; })
 
-    // guard render while user info loads
+    // Render guard
     if (!currentUser && !user) {
         return <div className="p-8 text-center">Loading...</div>
     }
@@ -263,15 +274,22 @@ const RoomPage = ({ user, socket, users }) => {
                 canvasRef={canvasRef}
                 ctxRef={ctxRef}
                 elements={elements}
-                setElements={(newElements, opts) => setElements(newElements, opts)} // wrapper that may emit
+                setElements={(newElements) => {
+                    // Whenever Whiteboard updates elements (new stroke, etc.), update local and broadcast
+                    setElements(newElements)
+                    // inform server of full state
+                    if (currentUser) {
+                        socket.emit('whiteboard-update', { roomId: currentUser.id, elements: newElements })
+                    }
+                }}
                 tool={tool}
                 color={color}
                 setColor={setColor}
                 socket={socket}
                 user={currentUser}
-                emitDrawElement={emitDrawElement} // optional helper you can use inside Whiteboard when a single element is created
             />
 
+            {/* Presenter Permissions Modal (kept for compatibility but no host controls shown elsewhere) */}
             <PresenterModal
                 isOpen={isPresenterModalOpen}
                 setIsOpen={setIsPresenterModalOpen}
