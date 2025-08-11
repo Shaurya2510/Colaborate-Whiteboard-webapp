@@ -7,6 +7,9 @@ import { Routes, Route } from "react-router-dom"
 import io from "socket.io-client"
 import { useState, useEffect } from "react"
 import { ToastContainer, toast } from "react-toastify"
+import AboutUs from "./pages/AboutUs"
+import ContactUs from "./pages/ContactUs"
+import Features from "./pages/Features"
 import { Container } from "./components/Container"
 
 //start both nodemon server.js and yarn run dev on diff terminals to start this
@@ -57,6 +60,9 @@ function App() {
       <ToastContainer />
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/about" element={<AboutUs />} />
+        <Route path="/contact" element={<ContactUs />} />
+        <Route path="/features" element={<Features />} />
         <Route path="/create-room" element={<CreateRoom socket={socket} setUser={setUser} />} />
         <Route path="/join-room" element={<JoinRoom socket={socket} setUser={setUser} />} />
         <Route path="/:roomid" element={<RoomPage user={user} socket={socket} users={users} />} />

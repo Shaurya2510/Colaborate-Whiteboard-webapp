@@ -1,13 +1,32 @@
-import React from 'react'
-import { Link } from 'react-router-dom'
+import React from 'react';
+import { Link } from 'react-router-dom';
+import Navbar from '../../components/Navbar';
+
 const LandingPage = () => {
   return (
-    <div className="text-center">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
+      <Navbar />
 
-      <Link to='/create-room'><button className="mt-[20%] mx-2 w-1/2 bg-blue-700 mx-auto rounded-lg hover:bg-blue-600 p-2 text-white">Create Room</button></Link>
-      <Link to='/join-room'><button className="my-[5px] mx-2 w-1/2 bg-blue-700 rounded-lg hover:bg-blue-600 p-2 text-white">Join Room</button></Link>
+      {/* Welcome Message */}
+      <h1 className="text-5xl font-extrabold mb-8 text-blue-400 tracking-wide text-shadow-lg">
+        Hello Welcome to Collaborate
+      </h1>
+
+      {/* Button Group */}
+      <div className="flex flex-col gap-4 w-full max-w-sm">
+        <Link to='/create-room'>
+          <button className="w-full py-4 text-xl font-bold rounded-lg transition-all duration-300 bg-green-600 hover:bg-green-700 shadow-md">
+            Create Room
+          </button>
+        </Link>
+        <Link to='/join-room'>
+          <button className="w-full py-4 text-xl font-bold rounded-lg transition-all duration-300 bg-gray-700 hover:bg-gray-800 border border-gray-600 shadow-md">
+            Join Room
+          </button>
+        </Link>
+      </div>
     </div>
-  )
-}
+  );
+};
 
-export default LandingPage
+export default LandingPage;

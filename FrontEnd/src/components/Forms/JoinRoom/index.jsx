@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useNavigate } from "react-router-dom";
-import { useToast } from '../../ui/use-toast';  // Assuming you have useToast imported from a shared UI component
+import { useToast } from '../../ui/use-toast';
 import './index.css';
 
 const JoinRoom = ({ setUser, socket }) => {
@@ -37,6 +37,15 @@ const JoinRoom = ({ setUser, socket }) => {
 
     function handleJoinRoom(e) {
         e.preventDefault();
+        if (!name.trim() || !id.trim()) {
+            toast({
+                title: 'Missing Fields',
+                description: 'Please enter your name and room code.',
+                variant: 'destructive'
+            });
+            return;
+        }
+
         const userData = {
             name,
             id,
@@ -44,23 +53,43 @@ const JoinRoom = ({ setUser, socket }) => {
             host: false,
             presenter: false
         };
-        // The server will now handle the logic of checking for room existence.
-        // We'll wait for the server's response before navigating.
         socket.emit('user-joined', userData);
     }
 
     return (
-        <div className='bg-black-800 w-[100%] h-[100vh] flex justify-center items-center'>
-            <form className='bg-white rounded-lg w-[25%] h-[50%] flex flex-col p-4 justify-center'>
-                <h1 className='font-bold text-center text-xl'>JOIN ROOM</h1>
-                <div>
-                    <input type="text" className='my-2 rounded-md border-2 w-full p-2' value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter your name"></input>
-                    <input id="input" className='my-2 rounded-md border-2 w-full p-2' value={id} onChange={(e) => setId(e.target.value)} type="text" placeholder="Enter Room Code"></input>
-                </div>
-                <button className="submit text-center bg-blue-700 w-full mb-[10px] rounded-md mt-2 p-2 text-white" onClick={handleJoinRoom}>Join Room</button>
+        <div className="w-full h-screen flex justify-center items-center bg-gradient-to-br from-gray-900 via-gray-800 to-black p-4">
+            <form className="bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl w-full max-w-md p-8 shadow-2xl flex flex-col items-center space-y-6">
+                <h1 className="font-bold text-3xl text-white tracking-wide">Join Room</h1>
+
+                {/* Name Input */}
+                <input
+                    type="text"
+                    className="w-full p-3 rounded-lg border border-gray-400 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Enter your name"
+                />
+
+                {/* Room Code Input */}
+                <input
+                    id="input"
+                    className="w-full p-3 rounded-lg border border-gray-400 bg-white/90 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    value={id}
+                    onChange={(e) => setId(e.target.value)}
+                    type="text"
+                    placeholder="Enter Room Code"
+                />
+
+                {/* Submit Button */}
+                <button
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-lg transition"
+                    onClick={handleJoinRoom}
+                >
+                    Join Room
+                </button>
             </form>
         </div>
-    )
+    );
 }
 
 export default JoinRoom;
