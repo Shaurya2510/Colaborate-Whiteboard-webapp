@@ -4,12 +4,19 @@ import Navbar from '../../components/Navbar';
 
 const LandingPage = () => {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
+      {/* Logo in the top-left corner */}
+      <img
+        src="Logo2.png"
+        alt="Collaborate Logo"
+        className="absolute top-8 left-8 w-16 h-16"
+      />
+
       <Navbar />
 
       {/* Welcome Message */}
       <h1 className="text-5xl font-extrabold mb-8 text-blue-400 tracking-wide text-shadow-lg">
-        Hello Welcome to Collaborate
+        Hello, Welcome to Collaborate!
       </h1>
 
       {/* Button Group */}
