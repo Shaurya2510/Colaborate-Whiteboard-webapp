@@ -61,7 +61,7 @@ const GithubIcon = () => (
 
 const Contact = () => {
     // If the file is in public folder, use "/profile-pic.jpg"
-    const profilePicUrl = "/profile pic.jpg"; // <- convert HEIC to JPG/PNG and put in public folder
+    const profilePicUrl = "Logo1.png"; // <- convert HEIC to JPG/PNG and put in public folder
 
     const bio = `Hi, my name is Shaurya. I'm a passionate and motivated developer
   focused on building intuitive and efficient web applications. I enjoy
@@ -69,9 +69,9 @@ const Contact = () => {
   solve complex problems. Feel free to connect with me on the platforms below!`;
 
     const contactInfo = [
-        { icon: <EnvelopeIcon />, text: "pandeyshaurya2004@gmail.com", href: "mailto:pandeyshaurya2004@gmail.com" },
-        { icon: <PhoneIcon />, text: "+91 63957 57200", href: "tel:+916395757200" },
-        { icon: <LinkedinIcon />, text: "LinkedIn Profile", href: "https://www.linkedin.com/in/shauryapandey10/" },
+        { icon: <EnvelopeIcon />, text: "mail@gmail.com", href: "mailto:mail@gmail.com" },
+        { icon: <PhoneIcon />, text: "+91 911xxxx343", href: "tel:+91 911xxxx343" },
+        { icon: <LinkedinIcon />, text: "LinkedIn Profile", href: "https://www.linkedin.com/in" },
         { icon: <GithubIcon />, text: "GitHub Account", href: "https://github.com/Shaurya2510" },
     ];
 
